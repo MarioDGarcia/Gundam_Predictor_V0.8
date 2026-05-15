@@ -83,6 +83,9 @@ DEFAULT_RELEASE_SATURATION = {
     "recolor": 0.76,
 }
 
+MODEL_SCORE_FLOOR = 0.13
+MODEL_SCORE_CEILING = 0.83
+
 
 def get_resource_path(relative_path):
     base_path = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent))
@@ -100,6 +103,11 @@ def get_price_relative(grado, precio):
     conf = GRADE_CONFIG[grado]
     price_mean = (conf["p_min"] + conf["p_max"]) / 2
     return precio / price_mean
+
+
+def calibrate_display_score(raw_score):
+    normalized = (raw_score - MODEL_SCORE_FLOOR) / (MODEL_SCORE_CEILING - MODEL_SCORE_FLOOR)
+    return clamp(normalized, 0, 1)
 
 
 def get_recommendation(score):
@@ -201,7 +209,8 @@ def sync_slider_labels(*_args):
 def calcular():
     try:
         nuevo = build_input_dataframe()
-        pred = float(np.clip(modelo.predict(nuevo)[0], 0, 1))
+        raw_pred = float(np.clip(modelo.predict(nuevo)[0], 0, 1))
+        pred = calibrate_display_score(raw_pred)
     except ValueError:
         messagebox.showerror("Dato invalido", "Revisa el precio. Debe ser un numero valido.")
         return
@@ -219,6 +228,7 @@ def calcular():
             f"Universo: {combo_universo.get()} / {combo_subserie.get()}\n"
             f"Configuracion: {combo_grado.get()} | {combo_role.get()} | {combo_release.get()} | {combo_distribution.get()}\n"
             f"Precio relativo: {get_price_relative(combo_grado.get(), float(entry_precio.get())):.2f}\n"
+            f"Score crudo del modelo: {raw_pred * 100:.1f}%\n"
             f"Lectura: {get_recommendation(pred)}"
         ),
     )
@@ -265,7 +275,7 @@ title_frame.pack(fill=X)
 tb.Label(title_frame, text="Gunpla Market Analyzer v3", font=("Helvetica", 22, "bold")).pack(anchor="w")
 tb.Label(
     title_frame,
-    text="Interfaz para el modelo con exito relativo por canal: retail, P-Bandai y event exclusive.",
+    text="Interfaz para el modelo con indice calibrado por canal: retail, P-Bandai y event exclusive.",
     font=("Helvetica", 10),
     bootstyle="secondary",
 ).pack(anchor="w", pady=(4, 0))
@@ -382,7 +392,8 @@ tb.Label(
         "- Ajusta hype si el kit viene de algo reciente o muy esperado.\n"
         "- Sube saturacion si ya hay muchas variantes o recolors.\n"
         "- Sube demanda si el suit es muy popular entre fans.\n"
-        "- El resultado muestra que tan bien podria funcionar dentro de su propio canal de venta."
+        "- El medidor usa una escala calibrada para que los mejores escenarios puedan acercarse a 100%.\n"
+        "- El resumen conserva el score crudo del modelo para comparar."
     ),
     wraplength=320,
     justify=LEFT,
